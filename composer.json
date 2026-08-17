@@ -1,0 +1,47 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "lundo/laravel-translations",
+    "description": "Transparent polymorphic translations for Eloquent models",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Lundo Software",
+            "email": "dev@lundo.nl"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "laravel/framework": "^11.0|^12.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^9.0|^10.0",
+        "pestphp/pest": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Lundo\\Translations\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Lundo\\Translations\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Lundo\\Translations\\TranslationsServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "pest"
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable"
+}
