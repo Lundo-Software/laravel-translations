@@ -77,6 +77,15 @@ trait HasTranslations
     // Explicit write bypassing locale middleware (e.g. admin saving multiple languages at once)
     public function setTranslation(string $key, string $locale, ?string $value): static
     {
+        if ($locale === config('translations.default_locale', 'nl')) {
+            parent::setAttribute($key, $value);
+            // Persist pending translations first to avoid save() flushing them as a side effect
+            $this->persistPendingTranslations();
+            $this->save();
+
+            return $this;
+        }
+
         $this->translations()->updateOrCreate(
             ['locale' => $locale, 'key' => $key],
             ['value' => $value],
@@ -89,10 +98,95 @@ trait HasTranslations
 
     public function getTranslation(string $key, string $locale): ?string
     {
+        // Default locale values live in model columns, not the translations table
+        if ($locale === config('translations.default_locale', 'nl')) {
+            return parent::getAttribute($key);
+        }
+
         return $this->translations()
             ->where('locale', $locale)
             ->where('key', $key)
             ->value('value');
+    }
+
+    /** Returns all translations for a key as ['locale' => 'value'], including the default locale. */
+    public function getTranslations(string $key): array
+    {
+        $default = config('translations.default_locale', 'nl');
+
+        $rows = $this->translations()
+            ->where('key', $key)
+            ->pluck('value', 'locale')
+            ->all();
+
+        $rows[$default] ??= parent::getAttribute($key);
+
+        return $rows;
+    }
+
+    /** Sets translations for multiple locales at once: ['en' => 'Hello', 'nl' => 'Hallo']. */
+    public function setTranslations(string $key, array $translations): static
+    {
+        foreach ($translations as $locale => $value) {
+            $this->setTranslation($key, $locale, $value);
+        }
+
+        return $this;
+    }
+
+    public function hasTranslation(string $key, string $locale): bool
+    {
+        if ($locale === config('translations.default_locale', 'nl')) {
+            return parent::getAttribute($key) !== null;
+        }
+
+        return $this->translations()
+            ->where('locale', $locale)
+            ->where('key', $key)
+            ->exists();
+    }
+
+    public function forgetTranslation(string $key, string $locale): static
+    {
+        $this->translations()
+            ->where('locale', $locale)
+            ->where('key', $key)
+            ->delete();
+
+        $this->unsetRelation('translations');
+
+        return $this;
+    }
+
+    public function forgetAllTranslations(string $locale): static
+    {
+        $this->translations()
+            ->where('locale', $locale)
+            ->delete();
+
+        $this->unsetRelation('translations');
+
+        return $this;
+    }
+
+    /** Returns all locales this model has a translation for, including the default locale if columns are set. */
+    public function locales(): array
+    {
+        $default = config('translations.default_locale', 'nl');
+
+        $locales = $this->translations()
+            ->distinct()
+            ->pluck('locale')
+            ->all();
+
+        $hasDefaultValue = collect($this->translatable ?? [])
+            ->contains(fn ($key) => parent::getAttribute($key) !== null);
+
+        if ($hasDefaultValue && ! in_array($default, $locales, true)) {
+            $locales[] = $default;
+        }
+
+        return $locales;
     }
 
     // --- Media (requires spatie/laravel-medialibrary) ---
@@ -118,7 +212,11 @@ trait HasTranslations
 
     protected function resolveTranslation(string $key, string $locale): ?string
     {
-        // NL values live in model columns; only non-default locales are in the translations table
+        // Default locale values live in model columns, not the translations table
+        if ($locale === config('translations.default_locale', 'nl')) {
+            return parent::getAttribute($key);
+        }
+
         return $this->translations
             ->where('locale', $locale)
             ->where('key', $key)

@@ -2,15 +2,20 @@
 
 declare(strict_types=1);
 
+use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
 use Lundo\Translations\Middleware\SetLocaleFromUser;
-use Lundo\Translations\Tests\TestCase;
-
-uses(TestCase::class);
 
 it('sets locale from authenticated user preferred_locale', function (): void {
-    $user = new class {
+    $user = new class implements Authenticatable {
         public string $preferred_locale = 'en';
+        public function getAuthIdentifierName(): string { return 'id'; }
+        public function getAuthIdentifier(): mixed { return 1; }
+        public function getAuthPasswordName(): string { return 'password'; }
+        public function getAuthPassword(): string { return ''; }
+        public function getRememberToken(): string { return ''; }
+        public function setRememberToken($value): void {}
+        public function getRememberTokenName(): string { return ''; }
     };
 
     $this->actingAs($user);
@@ -22,8 +27,15 @@ it('sets locale from authenticated user preferred_locale', function (): void {
 });
 
 it('falls back to default locale when user has no preferred_locale', function (): void {
-    $user = new class {
+    $user = new class implements Authenticatable {
         public ?string $preferred_locale = null;
+        public function getAuthIdentifierName(): string { return 'id'; }
+        public function getAuthIdentifier(): mixed { return 1; }
+        public function getAuthPasswordName(): string { return 'password'; }
+        public function getAuthPassword(): string { return ''; }
+        public function getRememberToken(): string { return ''; }
+        public function setRememberToken($value): void {}
+        public function getRememberTokenName(): string { return ''; }
     };
 
     $this->actingAs($user);

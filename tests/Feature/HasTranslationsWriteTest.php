@@ -3,9 +3,6 @@
 declare(strict_types=1);
 
 use Lundo\Translations\Tests\Models\TestSubject;
-use Lundo\Translations\Tests\TestCase;
-
-uses(TestCase::class);
 
 it('writes to model column when locale is default', function (): void {
     app()->setLocale('nl');
@@ -68,4 +65,23 @@ it('handles create in non-default locale', function (): void {
     // Column should be empty — value was buffered as a translation
     expect($subject->getRawOriginal('name'))->toBeNull()
         ->and($subject->getTranslation('name', 'en'))->toBe('English name');
+});
+
+it('setTranslation routes default locale write to model column', function (): void {
+    app()->setLocale('nl');
+    $subject = TestSubject::create(['name' => 'Origineel']);
+
+    $subject->setTranslation('name', 'nl', 'Gewijzigd');
+
+    expect($subject->getRawOriginal('name'))->toBe('Gewijzigd')
+        ->and($subject->translations()->where('locale', 'nl')->count())->toBe(0);
+});
+
+it('setTranslation for default locale does not create a translation row', function (): void {
+    app()->setLocale('nl');
+    $subject = TestSubject::create(['name' => 'Origineel']);
+
+    $subject->setTranslation('name', 'nl', 'Nieuw');
+
+    expect($subject->translations()->count())->toBe(0);
 });
