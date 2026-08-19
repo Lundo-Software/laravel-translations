@@ -10,6 +10,8 @@ class TranslationsServiceProvider extends ServiceProvider
 {
     public function boot(): void
     {
+        $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+
         $this->publishes([
             __DIR__.'/../database/migrations/create_translations_table.php'
                 => database_path('migrations/'.date('Y_m_d_His').'_create_translations_table.php'),

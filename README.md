@@ -19,6 +19,12 @@ Run the migration:
 php artisan migrate
 ```
 
+The migration is loaded automatically by the package — no publish step needed. If you prefer to customise it, you can publish it first:
+
+```bash
+php artisan vendor:publish --tag=translations-migrations
+```
+
 Optionally publish the config:
 
 ```bash

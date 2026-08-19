@@ -18,10 +18,10 @@ it('sets locale from authenticated user preferred_locale', function (): void {
         public function getRememberTokenName(): string { return ''; }
     };
 
-    $this->actingAs($user);
+    $request = Request::create('/');
+    $request->setUserResolver(fn () => $user);
 
-    $middleware = new SetLocaleFromUser;
-    $middleware->handle(Request::create('/'), fn () => response('ok'));
+    (new SetLocaleFromUser)->handle($request, fn () => response('ok'));
 
     expect(app()->getLocale())->toBe('en');
 });
@@ -38,17 +38,16 @@ it('falls back to default locale when user has no preferred_locale', function ()
         public function getRememberTokenName(): string { return ''; }
     };
 
-    $this->actingAs($user);
+    $request = Request::create('/');
+    $request->setUserResolver(fn () => $user);
 
-    $middleware = new SetLocaleFromUser;
-    $middleware->handle(Request::create('/'), fn () => response('ok'));
+    (new SetLocaleFromUser)->handle($request, fn () => response('ok'));
 
     expect(app()->getLocale())->toBe('nl');
 });
 
 it('falls back to default locale when no user is authenticated', function (): void {
-    $middleware = new SetLocaleFromUser;
-    $middleware->handle(Request::create('/'), fn () => response('ok'));
+    (new SetLocaleFromUser)->handle(Request::create('/'), fn () => response('ok'));
 
     expect(app()->getLocale())->toBe('nl');
 });

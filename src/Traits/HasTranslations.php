@@ -88,7 +88,7 @@ trait HasTranslations
 
         $this->translations()->updateOrCreate(
             ['locale' => $locale, 'key' => $key],
-            ['value' => $value],
+            ['value' => $this->castForStorage($key, $value)],
         );
 
         $this->unsetRelation('translations');
@@ -96,17 +96,19 @@ trait HasTranslations
         return $this;
     }
 
-    public function getTranslation(string $key, string $locale): ?string
+    public function getTranslation(string $key, string $locale): mixed
     {
         // Default locale values live in model columns, not the translations table
         if ($locale === config('translations.default_locale', 'nl')) {
             return parent::getAttribute($key);
         }
 
-        return $this->translations()
+        $raw = $this->translations()
             ->where('locale', $locale)
             ->where('key', $key)
             ->value('value');
+
+        return $this->castFromStorage($key, $raw);
     }
 
     /** Returns all translations for a key as ['locale' => 'value'], including the default locale. */
@@ -210,18 +212,20 @@ trait HasTranslations
 
     // --- Internals ---
 
-    protected function resolveTranslation(string $key, string $locale): ?string
+    protected function resolveTranslation(string $key, string $locale): mixed
     {
         // Default locale values live in model columns, not the translations table
         if ($locale === config('translations.default_locale', 'nl')) {
             return parent::getAttribute($key);
         }
 
-        return $this->translations
+        $raw = $this->translations
             ->where('locale', $locale)
             ->where('key', $key)
             ->first()
             ?->value;
+
+        return $this->castFromStorage($key, $raw);
     }
 
     protected function persistPendingTranslations(): void
@@ -230,13 +234,45 @@ trait HasTranslations
             foreach ($keys as $key => $value) {
                 $this->translations()->updateOrCreate(
                     ['locale' => $locale, 'key' => $key],
-                    ['value' => $value],
+                    ['value' => $this->castForStorage($key, $value)],
                 );
             }
         }
 
         $this->pendingTranslations = [];
         $this->unsetRelation('translations');
+    }
+
+    protected function castForStorage(string $key, mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        // Backed enums store their scalar value; unit enums store their name
+        if ($value instanceof \BackedEnum) {
+            return (string) $value->value;
+        }
+
+        if ($value instanceof \UnitEnum) {
+            return $value->name;
+        }
+
+        if (is_array($value) || is_object($value)) {
+            return json_encode($value);
+        }
+
+        return (string) $value;
+    }
+
+    protected function castFromStorage(string $key, ?string $value): mixed
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        // Delegate to Eloquent's own casting pipeline (handles enums, encrypted, dates, custom casts, etc.)
+        return $this->hasCast($key) ? $this->castAttribute($key, $value) : $value;
     }
 
     protected function isTranslatableKey(string $key): bool

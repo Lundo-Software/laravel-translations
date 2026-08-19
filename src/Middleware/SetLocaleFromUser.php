@@ -17,7 +17,7 @@ class SetLocaleFromUser
         $fallback = config('translations.default_locale', 'nl');
 
         try {
-            $locale = auth()->user()?->{$attribute} ?? $fallback;
+            $locale = $request->user()?->{$attribute} ?? $fallback;
         } catch (\Throwable) {
             throw new Exception('Error retrieving user locale. Ensure the user model implements Illuminate\Contracts\Auth\Authenticatable and has the preferred locale attribute defined.');
         }
