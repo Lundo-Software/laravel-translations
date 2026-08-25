@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Lundo\Translations;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Validation\Rule;
+use Lundo\Translations\Rules\LocalizedRule;
+use Lundo\Translations\Rules\LocaleRequiredRule;
 
 class TranslationsServiceProvider extends ServiceProvider
 {
@@ -20,6 +23,9 @@ class TranslationsServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__.'/../config/translations.php' => config_path('translations.php'),
         ], 'translations-config');
+
+        Rule::macro('localized', fn (?array $locales = null) => new LocalizedRule($locales));
+        Rule::macro('localeRequired', fn (?array $locales = null) => new LocaleRequiredRule($locales));
     }
 
     public function register(): void

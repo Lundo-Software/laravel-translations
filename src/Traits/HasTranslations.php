@@ -5,17 +5,52 @@ declare(strict_types=1);
 namespace Lundo\Translations\Traits;
 
 use Illuminate\Database\Eloquent\Relations\MorphMany;
-use Illuminate\Support\Collection;
 
 trait HasTranslations
 {
     protected array $pendingTranslations = [];
 
+    protected ?int $translationSourceId = null;
+
+    protected ?string $translationSourceType = null;
+
     protected static function bootHasTranslations(): void
     {
         static::saved(function (self $model): void {
             $model->persistPendingTranslations();
+
+            if ($model->translationSourceId !== null) {
+                $model->copyTranslationsFrom($model->translationSourceId, $model->translationSourceType ?? get_class($model));
+                $model->translationSourceId = null;
+                $model->translationSourceType = null;
+            }
         });
+    }
+
+    public function replicate(?array $except = null): static
+    {
+        $replica = parent::replicate($except);
+        $replica->translationSourceId = $this->id;
+        $replica->translationSourceType = get_class($this);
+
+        return $replica;
+    }
+
+    protected function copyTranslationsFrom(int $sourceId, string $sourceType): void
+    {
+        /** @var class-string<\Illuminate\Database\Eloquent\Model> $translationModel */
+        $translationModel = config('translations.model', \Lundo\Translations\Models\Translation::class);
+
+        $translationModel::where('translatable_type', $sourceType)
+            ->where('translatable_id', $sourceId)
+            ->each(function ($t) {
+                $this->translations()->updateOrCreate(
+                    ['locale' => $t->locale, 'key' => $t->key],
+                    ['value' => $t->value],
+                );
+            });
+
+        $this->unsetRelation('translations');
     }
 
     public function translations(): MorphMany
@@ -27,6 +62,11 @@ trait HasTranslations
     }
 
     // --- Read ---
+
+    public function getTranslatableAttributes(): array
+    {
+        return $this->translatable ?? [];
+    }
 
     public function getAttribute($key): mixed
     {
@@ -65,6 +105,22 @@ trait HasTranslations
 
     public function setAttribute($key, $value): mixed
     {
+        if ($this->isTranslatableKey($key) && is_array($value) && $this->isLocaleMap($value)) {
+            $default = config('translations.default_locale', 'nl');
+
+            if (array_key_exists($default, $value)) {
+                parent::setAttribute($key, $value[$default]);
+            }
+
+            foreach ($value as $locale => $v) {
+                if ($locale !== $default) {
+                    $this->pendingTranslations[$locale][$key] = $v;
+                }
+            }
+
+            return $this;
+        }
+
         if ($this->isTranslatableKey($key) && ! $this->isDefaultLocale()) {
             $this->pendingTranslations[app()->getLocale()][$key] = $value;
 
@@ -111,17 +167,24 @@ trait HasTranslations
         return $this->castFromStorage($key, $raw);
     }
 
-    /** Returns all translations for a key as ['locale' => 'value'], including the default locale. */
+    /** Returns all translations for a key as ['locale' => value|null] for every configured locale. */
     public function getTranslations(string $key): array
     {
         $default = config('translations.default_locale', 'nl');
+        $locales = config('translations.locales', [$default]);
 
         $rows = $this->translations()
             ->where('key', $key)
             ->pluck('value', 'locale')
+            ->map(fn ($raw) => $this->castFromStorage($key, $raw))
             ->all();
 
-        $rows[$default] ??= parent::getAttribute($key);
+        $rows[$default] = parent::getAttribute($key);
+
+        // Fill null for every configured locale that has no translation row
+        foreach ($locales as $locale) {
+            $rows[$locale] ??= null;
+        }
 
         return $rows;
     }
@@ -191,25 +254,6 @@ trait HasTranslations
         return $locales;
     }
 
-    // --- Media (requires spatie/laravel-medialibrary) ---
-
-    /**
-     * Returns media for the active locale, falling back to the fallback locale,
-     * then to untagged (legacy) media. Requires locale custom_property on media.
-     */
-    public function getLocalizedMedia(string $collection, ?string $locale = null): Collection
-    {
-        $locale ??= app()->getLocale();
-        $fallback = config('translations.fallback_locale', 'nl');
-
-        return $this->getMedia($collection)
-            ->filter(fn ($m) => $m->getCustomProperty('locale') === $locale)
-            ->whenEmpty(fn () => $this->getMedia($collection)
-                ->filter(fn ($m) => $m->getCustomProperty('locale') === $fallback))
-            ->whenEmpty(fn () => $this->getMedia($collection)
-                ->filter(fn ($m) => ! $m->getCustomProperty('locale')));
-    }
-
     // --- Internals ---
 
     protected function resolveTranslation(string $key, string $locale): mixed
@@ -225,7 +269,33 @@ trait HasTranslations
             ->first()
             ?->value;
 
-        return $this->castFromStorage($key, $raw);
+        $value = $this->castFromStorage($key, $raw);
+
+        // Treat all-empty arrays/objects as absent so getAttribute falls back to default locale
+        return $this->isEffectivelyEmpty($value) ? null : $value;
+    }
+
+    protected function isEffectivelyEmpty(mixed $value): bool
+    {
+        if ($value === null) {
+            return true;
+        }
+
+        if (is_array($value) && empty($value)) {
+            return true;
+        }
+
+        // Array of objects (e.g. options, sub_questions): empty when every item's text is blank
+        if (is_array($value) && isset($value[0]) && is_array($value[0])) {
+            return collect($value)->every(fn ($item) => empty(trim((string) ($item['text'] ?? ''))));
+        }
+
+        // Associative object (e.g. scale_labels): empty when all string values are blank
+        if (is_array($value) && ! array_is_list($value)) {
+            return collect($value)->every(fn ($v) => is_string($v) && trim($v) === '');
+        }
+
+        return false;
     }
 
     protected function persistPendingTranslations(): void
@@ -283,5 +353,23 @@ trait HasTranslations
     protected function isDefaultLocale(): bool
     {
         return app()->getLocale() === config('translations.default_locale', 'nl');
+    }
+
+    /** Returns true when every key in $value is a configured locale (and the array is non-empty). */
+    protected function isLocaleMap(array $value): bool
+    {
+        if (empty($value)) {
+            return false;
+        }
+
+        $locales = config('translations.locales', [config('translations.default_locale', 'nl')]);
+
+        foreach (array_keys($value) as $k) {
+            if (! in_array($k, $locales, true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

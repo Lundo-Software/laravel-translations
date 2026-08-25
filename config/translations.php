@@ -24,4 +24,9 @@ return [
      * Used by SetLocaleFromUser middleware.
      */
     'user_locale_attribute' => 'preferred_locale',
+
+    /*
+     * All supported locales. getTranslations() returns null for any locale not yet translated.
+     */
+    'locales' => ['nl', 'en'],
 ];
