@@ -112,6 +112,52 @@ $article->forgetTranslation('title', 'en');   // remove one key for a locale
 $article->forgetAllTranslations('en');         // remove all keys for a locale
 ```
 
+## Validation rules
+
+Two rules are provided for validating locale-map payloads (e.g. `{ "nl": "Hallo", "en": "Hello" }`).
+
+Register the macros once (e.g. in a service provider):
+
+```php
+use Illuminate\Validation\Rule;
+use Lundo\Translations\Rules\LocalizedRule;
+use Lundo\Translations\Rules\LocaleRequiredRule;
+
+Rule::macro('localized', fn (...$args) => new LocalizedRule(...$args));
+Rule::macro('localeRequired', fn (...$args) => new LocaleRequiredRule(...$args));
+```
+
+**`Rule::localized()`** — accepts a plain string (treated as the default locale) or an array whose keys are all valid locales and whose values are strings or null. Use on update endpoints where partial input is acceptable.
+
+**`Rule::localeRequired()`** — like `localized` but additionally requires every configured locale to be present with a non-empty value. Use on create endpoints.
+
+```php
+// Request rules
+'title' => [Rule::localized()],           // optional locales
+'title' => [Rule::localeRequired()],      // all locales required
+
+// Explicit locale list instead of config
+'title' => [Rule::localized(['nl', 'en'])],
+```
+
+## Localized media (optional — requires spatie/laravel-medialibrary)
+
+`HasLocalizedMedia` adds a `getLocalizedMedia()` method that returns media for the active locale, falling back to the fallback locale, then to untagged (legacy) media. Requires a `locale` custom property on each media item.
+
+```php
+use Lundo\Translations\Traits\HasTranslations;
+use Lundo\Translations\Traits\HasLocalizedMedia;
+
+class Article extends Model
+{
+    use HasTranslations, HasLocalizedMedia;
+}
+
+// In your controller / view:
+$article->getLocalizedMedia('photos');           // active locale
+$article->getLocalizedMedia('photos', 'en');     // explicit locale
+```
+
 ## Middleware
 
 `SetLocaleFromUser` reads the authenticated user's preferred locale and sets it for the request. Register it in your route middleware:
